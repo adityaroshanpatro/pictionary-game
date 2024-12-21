@@ -77,7 +77,12 @@ io.on('connection', (socket) => {
     });
 
     // Handle leaving a room
-    socket.on('leave-room', ({ roomId, username }) => {
+    socket.on('leave-room', (data) => {
+        console.log("roomid: ",data)
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId, username } = data || {}; // Handle missing or undefined payload
+        
         console.log(`leave-room event received: roomId=${roomId}, username=${username}`);
         console.log('Current rooms before leaving:', rooms);
 
@@ -97,7 +102,11 @@ io.on('connection', (socket) => {
     });
 
     // Handle drawing
-    socket.on('draw', ({ roomId, drawingData }) => {
+    socket.on('draw', (data) => {
+        console.log("roomid: ",data)
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId, drawingData } = data || {}; // Handle missing or undefined payload
         console.log(`draw event received for roomId=${roomId}:`, drawingData);
         if (!rooms[roomId]) {
             console.error(`Room with ID ${roomId} does not exist`);
@@ -107,7 +116,11 @@ io.on('connection', (socket) => {
     });
 
     // Handle clearing the canvas
-    socket.on('clear-canvas', (roomId) => {
+    socket.on('clear-canvas', (data) => {
+        console.log("roomid: ",data)
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId } = data || {}; // Handle missing or undefined payload
         console.log(`clear-canvas event received for roomId=${roomId}`);
         if (!rooms[roomId]) {
             console.error(`Room with ID ${roomId} does not exist`);
