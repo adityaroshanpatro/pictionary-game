@@ -19,11 +19,12 @@ app.use(express.json());
 
 // In-memory storage for rooms
 const rooms = {};
+const words = ['apple', 'tree', 'car', 'house', 'dog', 'sun', 'moon', 'river'];
 
 // Endpoint to create a room
 app.post('/create-room', (req, res) => {
     const roomId = Math.random().toString(36).substr(2, 6); // Generate a unique room ID
-    rooms[roomId] = { players: [], currentDrawer: null, currentWord: null };
+    rooms[roomId] = { players: [], currentDrawer: null, currentWord: null, turnIndex: 0, scores: {}, lastActivity: Date.now() };
     console.log(`Room created: ${roomId}`, rooms[roomId]);
     res.json({ roomId });
 });
@@ -68,6 +69,7 @@ io.on('connection', (socket) => {
     
         // Add player to the room
         rooms[roomId].players.push(username);
+        rooms[roomId].scores[username] = 0; // Initialize score
         socket.join(roomId);
         console.log(`${username} joined room ${roomId}`);
         console.log('Updated room details:', rooms[roomId]);
@@ -78,7 +80,7 @@ io.on('connection', (socket) => {
 
     // Handle leaving a room
     socket.on('leave-room', (data) => {
-        console.log("roomid: ",data)
+        console.log("leave-room event received:", data)
         data = JSON.parse(data)
         // Validate payload
         const { roomId, username } = data || {}; // Handle missing or undefined payload
@@ -99,6 +101,11 @@ io.on('connection', (socket) => {
 
         // Notify remaining players in the room
         io.to(roomId).emit('player-left', { username, players: rooms[roomId].players });
+
+        if (rooms[roomId].players.length === 0) {
+            console.log(`Room ${roomId} is now empty and will be deleted.`);
+            delete rooms[roomId];
+        }
     });
 
     // Handle drawing
@@ -129,9 +136,88 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('canvas-cleared'); // Notify all players in the room
     });
 
+    // Handle game start
+    socket.on('start-game', (data) => {
+        console.log("roomid: ",data)
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId } = data || {}; // Handle missing or undefined payload
+        const room = rooms[roomId];
+        if (!room) {
+            socket.emit('error', `Room ${roomId} does not exist`);
+            return;
+        }
+
+        room.turnIndex = 0;
+        const randomWord = words[Math.floor(Math.random() * words.length)];
+        room.currentWord = randomWord;
+        room.currentDrawer = room.players[0];
+
+        console.log(`Game started in room ${roomId}: Drawer=${room.currentDrawer}, Word=${randomWord}`);
+        io.to(roomId).emit('game-started', {
+            currentDrawer: room.currentDrawer,
+        });
+    });
+
+    // Handle guesses
+    socket.on('guess-word', (data) => {
+        console.log('guess-word event received:', data);
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId, username ,guess} = data || {}; // Handle missing or undefined payload
+        const room = rooms[roomId];
+        if (!room) return;
+
+        console.log(`Guess received in room ${roomId}: ${username} guessed "${guess}"`);
+
+        if (guess.toLowerCase() === room.currentWord.toLowerCase()) {
+            console.log(`Correct guess by ${username}!`);
+            room.scores[username] += 10;
+            io.to(roomId).emit('correct-guess', { username, word: room.currentWord });
+            io.to(roomId).emit('score-update', room.scores);
+            io.to(roomId).emit('next-turn-ready');
+        } else {
+            io.to(roomId).emit('new-guess', { username, guess });
+        }
+    });
+
+    // Handle next turn
+    socket.on('next-turn', (data) => {
+        console.log("roomid: ",data)
+        data = JSON.parse(data)
+        // Validate payload
+        const { roomId } = data || {}; // Handle missing or undefined payload
+        const room = rooms[roomId];
+        if (!room) return;
+
+        room.turnIndex = (room.turnIndex + 1) % room.players.length;
+        room.currentDrawer = room.players[room.turnIndex];
+        const randomWord = words[Math.floor(Math.random() * words.length)];
+        room.currentWord = randomWord;
+
+        console.log(`Next turn in room ${roomId}: Drawer=${room.currentDrawer}, Word=${randomWord}`);
+        io.to(roomId).emit('next-turn', {
+            currentDrawer: room.currentDrawer,
+        });
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
         console.log('A user disconnected');
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            room.players = room.players.filter(player => player !== socket.username);
+
+            if (room.currentDrawer === socket.username) {
+                io.to(roomId).emit('drawer-disconnected');
+                io.to(roomId).emit('next-turn-ready');
+            }
+
+            if (room.players.length === 0) {
+                console.log(`Room ${roomId} is now empty and will be deleted.`);
+                delete rooms[roomId];
+            }
+        }
     });
 });
 
