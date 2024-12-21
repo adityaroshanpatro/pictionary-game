@@ -9,12 +9,19 @@ const Lobby = () => {
     const [username, setUsername] = useState('');
     const navigate = useNavigate();
 
-    const createRoom = () => {
-        socket.emit('create-room', {}, (response) => {
-            const newRoomId = response.roomId;
-            setRoomId(newRoomId);
-            navigate(`/game/${newRoomId}`);
-        });
+    const createRoom = async () => {
+        try {
+            const response = await fetch('http://localhost:5000/create-room', { method: 'POST' });
+            const data = await response.json();
+            const newRoomId = data.roomId;
+    
+            // Save the roomId for display
+            alert(`Room created! Room ID: ${newRoomId}`);
+            navigate(`/game/${newRoomId}`); // Navigate to the game room
+        } catch (error) {
+            console.error('Error creating room:', error);
+            alert('Failed to create room. Please try again.');
+        }
     };
 
     const joinRoom = () => {
